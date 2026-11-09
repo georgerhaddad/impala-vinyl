@@ -16,6 +16,8 @@ import { press, makeVis, DEFAULT_CONDITION } from './src/press.js';
 import { RECORDS } from './src/records.js';
 
 const root = fileURLToPath(new URL('.', import.meta.url)), assets = join(root, 'assets'), songsDir = join(root, 'songs'), recordsDir = join(root, 'records');
+// records/index.json (written by tools/import.mjs) maps each catalogue track to the audio file it was given
+let index = {}; try { index = JSON.parse(readFileSync(join(recordsDir, 'index.json'), 'utf8')); } catch {}
 const FS = 48000, SEED = 7, STEP = 0.5e-9, HOUSE_CUT = { maxExtra: 150e-6 };
 const LATHE = ['lathe.mjs', 'src/demo.js', 'src/cut.js', 'src/press.js', 'src/dsp.js', 'src/geometry.js'];
 const ffmpeg = spawnSync('ffmpeg', ['-version']).status === 0;
@@ -75,7 +77,12 @@ function build({ id, out, load, cutOpts, keepSource }) {
   // decoded wall is within a quarter of a nanometre of the cut one everywhere. The pressing (wall roughness,
   // dust, scratches, groove echo) is random but seeded, so it is not downloaded: the page presses the decoded
   // cut itself with the same seed. Roughly half of the old file was that noise.
-  const rec = cut(tracks, FS, cutOpts);
+  // A loud side may not fit at the default level: cut it quieter until it does, as a mastering engineer would.
+  let rec = cut(tracks, FS, cutOpts);
+  for (let peak = (cutOpts.cutPeak ?? 0.14) * 0.85; rec.truncated && peak >= 0.05; peak *= 0.85) {
+    log(`${id}: too long for one side, cutting at ${peak.toFixed(3)} m/s`);
+    cutOpts = { ...cutOpts, cutPeak: peak }; rec = cut(tracks, FS, cutOpts);
+  }
   const { wallIn, wallOut, n } = rec;
   let peak = 0;
   for (const w of [wallIn, wallOut]) for (let i = 1; i < n; i++) { const d = Math.abs(w[i] - w[i - 1]); if (d > peak) peak = d; }
@@ -130,11 +137,13 @@ function build({ id, out, load, cutOpts, keepSource }) {
 // ---- what to build ----
 const jobs = [
   { id: 'house', out: assets, inputs: [...LATHE, 'songs', ...songs().map((f) => 'songs/' + f)], load: houseTracks, cutOpts: HOUSE_CUT, keepSource: false },   // pressing again no longer needs the tape
-  ...RECORDS.filter((r) => r.tracks).map((r) => ({
-    id: r.id, out: join(assets, r.id), inputs: [...LATHE, 'src/records.js', ...r.tracks.map((k) => 'records/' + k.file)],
-    load: () => r.tracks.map((k) => decode(join(recordsDir, k.file), k.title)), cutOpts: r.cut || {}, keepSource: false,
+  ...RECORDS.filter((r) => r.tracks && r.tracks.every((k) => index[k.file])).map((r) => ({
+    id: r.id, out: join(assets, r.id), inputs: [...LATHE, ...r.tracks.map((k) => 'records/' + index[k.file])],
+    load: () => r.tracks.map((k) => decode(join(recordsDir, index[k.file]), k.title)), cutOpts: r.cut || {}, keepSource: false,
   })),
 ];
+const absent = RECORDS.filter((r) => r.tracks && !r.tracks.every((k) => index[k.file]));
+if (absent.length) log(`no audio for ${absent.length} sides (run \`npm run import\`): ${absent.map((r) => r.id).join(', ')}`);
 const mtime = (f) => { try { return statSync(f).mtimeMs; } catch { return 0; } };
 const fresh = (j) => mtime(join(j.out, 'record.json')) > Math.max(...j.inputs.map((f) => mtime(join(root, f))));
 const args = process.argv.slice(2), all = args.includes('all'), want = args.length ? args : ['house'];

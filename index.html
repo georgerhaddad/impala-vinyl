@@ -3,24 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Record Player</title>
-<meta name="description" content="A physical simulation of how a record player makes sound: the music is cut into a groove and a simulated stylus reads it back.">
-<meta property="og:title" content="Record Player">
-<meta property="og:description" content="A physical simulation of how a record player makes sound. The music is cut into a groove and a simulated stylus reads it back.">
+<title>Impala Vinyl</title>
+<meta name="description" content="Tame Impala, side by side, on a record player simulated from the groove up: every era cut into a spiral groove and read back by a simulated stylus.">
+<meta property="og:title" content="Impala Vinyl">
+<meta property="og:description" content="Tame Impala on a record player simulated from the groove up. Every era cut into a groove, with its own label, and read back by a simulated stylus.">
 <meta property="og:image" content="https://vinyl-gl.vercel.app/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:url" content="https://vinyl-gl.vercel.app/">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:creator" content="@rauchg">
 <meta name="twitter:image" content="https://vinyl-gl.vercel.app/og.png">
 <script>
 // Start downloading and decoding the opening record now, before any module has even been requested.
 (function () {
   // phones get a short record first: a long side needs several hundred MB of memory once decoded
   var small = matchMedia('(max-width: 760px), (pointer: coarse)').matches;
-  var id = small ? 'gymnopedie' : 'rhapsody', dir = 'assets/' + id + '/', b = window.__boot = { id: id, dir: dir, got: 0, total: 0 };
+  var id = small ? 'currents-b' : 'currents-a', dir = 'assets/' + id + '/', b = window.__boot = { id: id, dir: dir, got: 0, total: 0 };
   b.man = fetch(dir + 'record.json').then(function (r) { if (!r.ok) throw new Error('no precompiled record'); return r.json(); });
   b.vis = fetch(dir + 'record.vis').then(function (r) { if (!r.ok) throw new Error('no precompiled record'); return r.arrayBuffer(); });
   b.audio = fetch(dir + 'record.flac').then(function (r) {
@@ -53,12 +52,15 @@
   })();
 })();
 </script>
+<script type="importmap">{ "imports": { "three": "./src/vendor/three.module.min.js" } }</script>
 <link rel="modulepreload" href="src/main.js"><link rel="modulepreload" href="src/render.js"><link rel="modulepreload" href="src/gl-util.js">
 <link rel="modulepreload" href="src/shaders.js"><link rel="modulepreload" href="src/dsp.js"><link rel="modulepreload" href="src/geometry.js">
 <link rel="modulepreload" href="src/records.js"><link rel="modulepreload" href="src/label.js"><link rel="modulepreload" href="src/press.js">
 <link rel="modulepreload" href="src/worklet.js"><link rel="modulepreload" href="src/engine.js"><link rel="modulepreload" href="src/engine-core.js"><link rel="modulepreload" href="src/groove.js">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600&family=Archivo+Black&family=Caveat:wght@600&family=Courier+Prime:wght@700&family=Fredoka:wght@600&family=Lexend:wght@400;500&family=Michroma&family=Oswald:wght@500;600&family=Source+Serif+4:opsz,wght@8..60,700&family=Space+Mono:wght@400;700&family=Syncopate:wght@700&display=swap">
 <style>
-  :root { --fg: #e8e4dd; --soft: #c4c0b9; --dim: #85817a; --line: rgba(255,255,255,.1); --panel: rgba(12,12,13,.78); --acc: #ffb454; --mono: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  :root { --fg: #e8e4dd; --soft: #c4c0b9; --dim: #85817a; --line: rgba(255,255,255,.1); --panel: rgba(12,12,13,.78); --acc: #b79ad6; --acc2: #e0322b; --tint: #5b3a8c; --display: "Michroma", sans-serif; --mono: ui-monospace, SFMono-Regular, Menlo, monospace; }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: #030304; color: var(--fg); font: 12px/1.45 ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif; overflow: hidden; -webkit-font-smoothing: antialiased; }
   #gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; opacity: 0; transition: opacity .55s ease-out; }
@@ -75,6 +77,27 @@
   .og, .og body { background: #000; }
   .og body > :not(#gl) { display: none !important; }      /* ?og: only the render, for the share image */
   #vig { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 46%, transparent 42%, rgba(0,0,0,.6) 100%); }
+  /* the era around the deck: a glow and a motif at the edges of the room, kept off the deck itself */
+  #aura { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity 1.2s ease, background 1.2s ease; mix-blend-mode: screen;
+    -webkit-mask-image: radial-gradient(ellipse 70% 66% at 50% 50%, transparent 52%, #000 100%); mask-image: radial-gradient(ellipse 70% 66% at 50% 50%, transparent 52%, #000 100%); }
+  .ready #aura { opacity: .7; }
+  [data-era=ep] #aura { background: radial-gradient(circle at 14% 12%, #f4c542 0, #d8452b 9%, transparent 26%),
+    repeating-radial-gradient(ellipse 140% 40% at 50% 120%, rgba(107,76,154,.5) 0 22px, rgba(61,111,180,.45) 22px 44px, rgba(233,185,73,.35) 44px 66px); }
+  [data-era=innerspeaker] #aura { background: linear-gradient(180deg, rgba(143,195,230,.55), transparent 45%, rgba(194,65,43,.35) 100%),
+    radial-gradient(ellipse at 20% 10%, rgba(238,243,245,.5), transparent 40%), radial-gradient(ellipse at 85% 18%, rgba(238,243,245,.35), transparent 35%); }
+  [data-era=lonerism] #aura { background: radial-gradient(circle at 92% 8%, rgba(243,198,184,.95), rgba(243,150,150,.3) 22%, transparent 45%),
+    repeating-linear-gradient(90deg, rgba(242,180,138,.28) 0 46px, transparent 46px 56px), linear-gradient(0deg, rgba(127,163,91,.45), transparent 30%); }
+  [data-era=currents] #aura { background: repeating-linear-gradient(172deg, rgba(91,58,140,.9) 0 9px, rgba(244,238,247,.25) 9px 14px),
+    linear-gradient(90deg, transparent 60%, rgba(224,50,43,.4)); }
+  [data-era=slow-rush] #aura { background: linear-gradient(0deg, #d9a46b, rgba(138,78,44,.6) 22%, transparent 40%), linear-gradient(180deg, rgba(200,53,43,.75), transparent 55%); }
+  [data-era=deadbeat] #aura { background: linear-gradient(90deg, transparent, rgba(240,106,42,.55) 30%, rgba(242,211,75,.4) 55%, transparent) 0 50% / 100% 22% no-repeat,
+    radial-gradient(circle at 50% 50%, rgba(236,234,229,.12), transparent 70%), repeating-radial-gradient(circle at 50% 50%, rgba(255,255,255,.08) 0 1px, transparent 1px 7px); }
+  [data-era=rarities] #aura, [data-era=none] #aura { background: radial-gradient(ellipse at 50% 0%, rgba(236,235,230,.25), transparent 60%); }
+  /* the stage's words over the picture (src/stage/words.js) */
+  #words { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; opacity: 0; transition: opacity .6s; }
+  #words.on { opacity: 1; }
+  .staged #aura, .staged #vig { opacity: 0 !important; }
+  .brand { font-family: var(--display); color: var(--acc); letter-spacing: .04em; text-transform: uppercase; font-size: 13px; transition: color .6s; }
 
   #teaser { position: fixed; top: 16px; left: 18px; max-width: 290px; z-index: 6; }
   #teaser p { margin: 0; color: var(--dim); }
@@ -120,10 +143,19 @@
   #ctl button:hover, .file:hover { background: rgba(255,255,255,.12); }
   #ctl button.on { background: var(--acc); color: #1a1206; border-color: transparent; }
   #shelf { top: 46px; right: 14px; width: 268px; max-height: calc(100% - 62px); overflow: auto; padding: 8px; }
-  #shelf button { all: unset; box-sizing: border-box; display: flex; justify-content: space-between; align-items: baseline; gap: 12px; width: 100%; padding: 6px 8px; border-radius: 7px; cursor: pointer; }
+  #shelf { width: 320px; max-height: calc(100% - 96px); }
+  #shelf .era { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 12px 8px 4px; cursor: default; }
+  #shelf .era:first-child { padding-top: 4px; }
+  #shelf .era b { font: 400 13px/1.2 var(--era-font, inherit); color: var(--era-acc, var(--fg)); text-transform: uppercase; letter-spacing: .05em; }
+  #shelf .era span { color: var(--dim); font-variant-numeric: tabular-nums; }
+  #shelf button { all: unset; box-sizing: border-box; display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 5px 8px; border-radius: 7px; cursor: pointer; }
   #shelf button:hover, #shelf button:focus-visible { background: rgba(255,255,255,.07); }
-  #shelf button b { font-weight: 400; } #shelf button span { color: var(--dim); white-space: nowrap; }
-  #shelf button[aria-current=true] b { color: var(--acc); }
+  #shelf button b { font-weight: 600; flex: none; } #shelf button span { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  #shelf button.side b { width: 14px; color: var(--era-acc); opacity: .75; }
+  #shelf button[aria-current=true] { background: rgba(255,255,255,.06); }
+  #shelf button[aria-current=true] b, #shelf button[aria-current=true] span { color: var(--era-acc, var(--acc)); opacity: 1; }
+  #shelf .byo { display: block; margin: 10px 8px 2px; padding: 7px 8px; border: 1px dashed var(--line); border-radius: 7px; text-align: center; color: var(--soft); cursor: pointer; }
+  #shelf .byo:hover { color: var(--fg); border-color: var(--dim); }
   #shelf p { margin: 8px 8px 4px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--dim); font-size: 11px; }
   #shelf a { color: var(--soft); }
   #scope { width: 100%; height: 62px; display: block; border-radius: 6px; }
@@ -151,6 +183,10 @@
   dialog code { font: 11.5px var(--mono); color: var(--fg); }
   dialog form { margin: 18px 0 0; text-align: right; }
   dialog form button { font: inherit; color: var(--fg); background: rgba(255,255,255,.08); border: 1px solid var(--line); border-radius: 999px; padding: 6px 16px; cursor: pointer; }
+  #byo h3 { font-family: var(--display); color: var(--acc); text-transform: uppercase; letter-spacing: .03em; }
+  #byo ol { margin: 0 0 14px; padding-left: 26px; color: var(--fg); }
+  #byo .pick { display: inline-block; margin-top: 4px; padding: 8px 18px; border-radius: 999px; background: var(--acc); color: #120d08; font-weight: 600; cursor: pointer; }
+  #byo .pick:hover { filter: brightness(1.1); }
   @media (max-width: 900px) { #teaser { max-width: 210px; } }
   @media (max-width: 640px) {                      /* phones: track line on its own row above the credits */
     #teaser { max-width: calc(100% - 36px); top: calc(14px + env(safe-area-inset-top)); }
@@ -161,7 +197,7 @@
     #hud { width: min(272px, calc(100% - 32px)); padding: 7px; bottom: calc(56px + env(safe-area-inset-bottom)); }
     #scope { height: 40px; }
     #stats { font-size: 9px; gap: 0 10px; margin-top: 5px; }
-    #ctl, #shelf { width: min(236px, calc(100% - 28px)); top: calc(88px + env(safe-area-inset-top)); max-height: calc(100% - 164px); }
+    #ctl, #shelf { width: min(300px, calc(100% - 28px)); top: calc(88px + env(safe-area-inset-top)); max-height: calc(100% - 164px); }
     #ctl { padding: 9px 10px; font-size: 11px; }          /* compact: leave most of the deck visible */
     #ctl h2 { margin: 9px 0 3px; font-size: 9px; }
     #ctl .row { margin: 3px 0; gap: 5px; }
@@ -173,19 +209,22 @@
 </head>
 <body>
 <canvas id="gl"></canvas>
+<div id="aura"></div>
+<canvas id="words"></canvas>
 <div id="vig"></div>
 <div id="loader" class="wait"><div class="bar"><i id="loader-fill"></i></div><span id="loader-pct"></span></div>
 
 <header id="teaser">
-  <p>A physical simulation of how a record player makes sound. <button class="link" id="b-more">More</button></p>
+  <p><span class="brand">Impala Vinyl</span><br>Tame Impala, every era, cut into a groove and played back by a simulated stylus. <button class="link" id="b-more">More</button></p>
 </header>
 
 <nav id="toggles">
   <button id="t-records" aria-pressed="false" title="Records"><span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span id="now-title">Records</span><span id="now-time"></span></button>
+  <button id="t-video" aria-pressed="true" title="The music video around the deck (Currents, so far)">Video on</button>
   <button id="t-ctl" aria-pressed="false">Controls</button>
 </nav>
 
-<div id="credit"><button id="t-reset" hidden>Reset view</button><a href="https://x.com/rauchg" target="_blank" rel="noopener">@rauchg</a><a href="https://github.com/rauchg/vinyl" target="_blank" rel="noopener">Source</a></div>
+<div id="credit"><button id="t-reset" hidden>Reset view</button><a href="https://github.com/rauchg/vinyl" target="_blank" rel="noopener">After rauchg/vinyl</a></div>
 <div id="foot"><span id="status"></span></div>
 
 <section id="hud" class="panel">
@@ -216,14 +255,27 @@
   <div class="row"><label>Scratches</label><input id="c-scratches" type="range" min="0" max="2" step="0.05" value="0.2"><output></output></div>
   <div class="row"><label>Warp mm</label><input id="c-warp" type="range" min="0" max="2" step="0.05" value="0.3"><output></output></div>
   <div class="row"><label>Off-centre</label><input id="c-offCenter" type="range" min="0" max="1.5" step="0.05" value="0.15"><output></output></div>
-  <div class="row"><button id="b-press">Press again</button><label class="file" for="f-audio">Cut a file</label><input id="f-audio" type="file" accept="audio/*" multiple hidden></div>
+  <div class="row"><button id="b-press">Press again</button><label class="file" for="f-audio">Cut a file</label><input id="f-audio" type="file" accept="audio/*,.mp3,.flac,.m4a,.wav,.ogg,.opus" multiple hidden></div>
   <div class="row"><button id="b-bump">Knock the table</button></div>
 </section>
 
 <section id="shelf" class="panel" hidden></section>
 
+<dialog id="byo">
+  <h3 id="byo-title">Side</h3>
+  <p>This side's audio isn't on this server: Tame Impala's music is not ours to hand out. If you have your own copies, choose them (or drop them anywhere on the page) and they will be cut into a record right here, in this tab. Nothing is uploaded.</p>
+  <ol id="byo-list"></ol>
+  <p class="fine">Any order and any format your browser can decode. Files are matched by their title tag or name, so the side gets its own label and plays in album order.</p>
+  <label class="pick" for="byo-file">Choose files</label><input id="byo-file" type="file" accept="audio/*,.mp3,.flac,.m4a,.wav,.ogg,.opus" multiple hidden>
+  <form method="dialog"><button>Not now</button></form>
+</dialog>
+
 <dialog id="more">
-  <h3>A record player simulated "from the groove up"</h3>
+  <h3>Tame Impala, from the groove up</h3>
+  <p>Every side of every Tame Impala era, from the 2008 EP to <em>Deadbeat</em>, as a record on a simulated turntable. Each era has its own label, drawn in code: a painted sun, a valley folding into itself, railings in summer light, lines of flow round a chrome sphere, a room filling with sand, a speaker cone at 4 a.m. They are fan designs that nod to the eras, not the real artwork.</p>
+  <p>No Tame Impala audio is shipped with this page. Sides you have locally are cut ahead of time from your own library (<code>npm run import</code>, then <code>npm run lathe</code>); for anything else, bring your own files and they are cut in your browser.</p>
+  <p class="fine">A fork of <a href="https://github.com/rauchg/vinyl" target="_blank" rel="noopener">rauchg/vinyl</a>, in the spirit of <a href="https://github.com/SunkenInTime/ilmc-vinyl" target="_blank" rel="noopener">ilmc-vinyl</a>. Not affiliated with Tame Impala, Kevin Parker or their labels.</p>
+  <h3 style="margin-top:22px">How the record player works</h3>
   <p>Instead of playing an audio file, the music is cut into a spiral groove, and a simulated stylus, cantilever, tonearm and cartridge read it back. What you hear is the voltage that motion would induce in the cartridge, after phono equalisation.</p>
   <p>This is a <em>physical simulation</em> of a record player's mechanics, which happen to play sound. It works in four steps, each a small file in <a href="https://github.com/rauchg/vinyl/tree/main/src" target="_blank" rel="noopener"><code>src/</code></a>.</p>
   <p><strong>1. Cut.</strong> The lathe (<a href="https://github.com/rauchg/vinyl/blob/main/src/cut.js" target="_blank" rel="noopener"><code>cut.js</code></a>) turns the audio into the two walls of a stereo groove at 33⅓ rpm, <span id="d-points">millions of</span> points on each: RIAA pre-emphasis, a limiter so a real cutter could have cut it, and variable pitch so the side fits on a 12" disc. The records on the shelf are cut ahead of time. Files you bring are cut here, in a worker. From then on the only thing that exists is the disc.</p>

@@ -2,8 +2,12 @@
 import { Renderer } from './render.js';
 import { TAU } from './dsp.js';
 import { RECORDS } from './records.js';
+import { ERAS, findTrack } from './catalog.js';
+import { setLabelInfo, LABEL_FONTS } from './label.js';
+import { readTitle } from './tags.js';
+import { Stage } from './stage/index.js';
 import { press, makeVis } from './press.js';
-import { PIVOT_X, PIVOT_Y, ALPHA_REST, R_DISC, R_LABEL, R_LEADIN, W33, alphaForRadius, stylusXY } from './geometry.js';
+import { PIVOT_X, PIVOT_Y, ALPHA_REST, R_DISC, R_LABEL, R_LEADIN, W33, alphaForRadius, stylusXY, grooveRadius } from './geometry.js';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('gl'), renderer = new Renderer(canvas);
@@ -18,6 +22,12 @@ let ctx = null, node = null, drag = null;
 // ?og renders just the deck on black, with no interface and no audio: it is how og.png (the share image) is made
 const OG = new URLSearchParams(location.search).has('og');
 if (OG) document.documentElement.classList.add('og');
+// the music video around the deck (src/stage/), for the eras that have a world. Off with ?plain, or the Video toggle.
+const PLAIN = new URLSearchParams(location.search).has('plain');
+let stage = null;
+try { if (!OG) stage = new Stage(renderer.gl, canvas, { words: $('words'), reduceFlashing: matchMedia('(prefers-reduced-motion: reduce)').matches }); } catch (err) { console.error('stage', err); }
+const videoOn = () => { try { return !PLAIN && localStorage.getItem('iv-video') !== 'off'; } catch { return !PLAIN; } };
+let video = videoOn();
 let pick = 0;   // bumps each time a record is chosen, so an older, slower cut cannot land on top of a newer choice
 const send = (m, transfer) => { if (node) node.port.postMessage(m, transfer || []); };
 const status = (msg) => { $('status').textContent = msg; };   // empty when nothing is happening
@@ -35,6 +45,8 @@ function startWorker() {
 }
 function gotRecord(rec, vis) {
   renderer.setRecord(rec, vis);
+  S.labelTitles = rec.tracks.map((t) => t.title || 'Untitled');
+  S.onPlatter = S.marked;                         // what to go back to if a side is picked and then not brought
   idle();
   if (!S.shown) {            // first record: fade the deck and the disc in together, a frame after it has been drawn
     S.shown = true;
@@ -45,12 +57,22 @@ function gotRecord(rec, vis) {
   $('d-points').textContent = (rec.n / 1e6).toFixed(1) + ' million';
   loadRecord();
 }
+// A light copy of the cut walls (every 16th sample) for the stage's dive into the groove: the audio thread gets
+// the walls themselves, so this is the only way the picture can still see the cut. About 20 MB for a long side.
+function grooveTap(rec) {
+  const step = 16, n = Math.ceil(rec.n / step), a = new Float32Array(n), b = new Float32Array(n);
+  for (let i = 0, j = 0; j < n; i += step, j++) { a[j] = rec.wallIn[i]; b[j] = rec.wallOut[i]; }
+  return { wallIn: a, wallOut: b, step, rTab: rec.rTab, spr: rec.spr, W: rec.W, thetaEnd: rec.thetaEnd };
+}
 function loadRecord() {
   if (!S.ready || !S.pending) return;
   const rec = S.pending; S.pending = null;
   // what the track readout maps the needle onto; seq comes back in the telemetry once the audio thread has it,
   // so a packet about the previous record can't be read against this one
   S.rec = { tracks: rec.tracks, thetaLock: rec.thetaLock, pick: S.pendingPick, seq: S.recSeq = (S.recSeq || 0) + 1 };
+  S.rtab = rec.rTab;
+  stage?.setTracks(S.stageTracks || null);
+  if (stage) stage.setTap(grooveTap(rec));        // before the walls go to the audio thread      // the record is on the platter now: the stage follows its tracks
   send({ t: 'cue', up: true });
   send({ t: 'record', rec, seq: S.rec.seq }, [rec.wallIn.buffer, rec.wallOut.buffer]);
   S.loaded = true;
@@ -62,6 +84,22 @@ function start() {
   if (!S.on || !S.ready || !S.loaded || S.started) return;
   S.started = true; $('power')?.remove(); play();
 }
+
+// ---------- era theme: colours and type around the deck, and the label ----------
+const hexRGB = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+function applyTheme(era, label = null) {
+  const t = (era || ERAS.find((e) => e.id === 'rarities')).theme, root = document.documentElement;
+  root.dataset.era = era ? era.id : 'none';
+  root.style.setProperty('--acc', t.acc); root.style.setProperty('--acc2', t.acc2);
+  root.style.setProperty('--tint', t.tint); root.style.setProperty('--display', t.font);
+  S.accRGB = hexRGB(t.acc).join(',');
+  S.theme = [era, label];
+  if (S.marked && !S.marked.r) S.marked.theme = S.theme;
+  renderer.bg = t.bg;
+  setLabelInfo(label);
+}
+// the label fonts come from Google Fonts: once they are in, paint the label again with them
+Promise.all(LABEL_FONTS.map((f) => document.fonts.load(f).catch(() => {}))).then(() => { if (S.labelTitles) renderer.setLabel(S.labelTitles); });
 
 // ---------- precompiled record (lathe.mjs): the clean cut ships as DPCM; decode it, press it here, go ----------
 const decodeAudio = async (url, fs) => new OfflineAudioContext(2, 1, fs).decodeAudioData(await (await fetch(url)).arrayBuffer());   // for mastering here
@@ -145,6 +183,7 @@ function initAudio() {
       } else if (m.t === 'log') console.warn(m.msg);
     };
     node.connect(ctx.destination);
+    stage?.attachAudio(ctx, node);
     if (!S.on && ctx.state === 'running') await ctx.suspend();   // some browsers start it unasked; stay silent until power-on
   })().catch((err) => { audioInit = null; ctx = null; node = null; throw err; });
 }
@@ -214,20 +253,39 @@ $('b-press').addEventListener('click', pressAgain);
 for (const b of document.querySelectorAll('[data-rpm]')) {
   b.addEventListener('click', () => { document.querySelectorAll('[data-rpm]').forEach((x) => x.classList.toggle('on', x === b)); S.rpm = +b.dataset.rpm; send({ t: 'speed', rpm: S.rpm }); });
 }
+// Files dropped or chosen here are cut in the browser. They are matched to the catalogue by their title tag
+// (or file name), so a Tame Impala side gets its own label and colours, in album order.
 async function cutFiles(files) {
-  const list = [...files].filter((f) => f.type.startsWith('audio/') || /\.(mp3|wav|flac|m4a|ogg|aiff?)$/i.test(f.name));
+  const list = [...files].filter((f) => f.type.startsWith('audio/') || /\.(mp3|wav|flac|m4a|aac|ogg|opus|aiff?)$/i.test(f.name));
   if (!list.length) return;
+  if ($('byo').open) { S.brought = true; $('byo').close(); }
   status('Decoding...');
   const tracks = [], transfer = [];
   for (const f of list) {
     try {
-      const ab = await new OfflineAudioContext(2, 1, 48000).decodeAudioData(await f.arrayBuffer());
+      const buf = await f.arrayBuffer(), name = f.name.replace(/\.[^.]+$/, '');
+      const tag = readTitle(buf), hit = findTrack(tag) || findTrack(name);     // before decoding, which detaches the buffer
+      const ab = await new OfflineAudioContext(2, 1, 48000).decodeAudioData(buf);
       const L = ab.getChannelData(0).slice(), R = ab.numberOfChannels > 1 ? ab.getChannelData(1).slice() : L.slice();
-      tracks.push({ L, R, title: f.name.replace(/\.[^.]+$/, '') }); transfer.push(L.buffer, R.buffer);
+      tracks.push({ L, R, title: hit ? hit.title : tag || name, hit }); transfer.push(L.buffer, R.buffer);
     } catch (err) { console.error(err); }
   }
   if (!tracks.length) return status('Could not decode that audio.');
-  S.workerHasSource = true; S.man = null; pick++; markRecord(null);
+  // Tame Impala? theme the record after the era most of the files are from, and if they all are, play them in album order
+  const hits = tracks.filter((t) => t.hit), order = (t) => ERAS.indexOf(t.hit.side.era) * 100 + t.hit.n;
+  let era = null, label = null, title = 'Your audio';
+  if (hits.length) {
+    const count = new Map(); for (const t of hits) count.set(t.hit.side.era, (count.get(t.hit.side.era) || 0) + 1);
+    era = [...count].sort((x, y) => y[1] - x[1])[0][0];
+    if (hits.length === tracks.length) tracks.sort((x, y) => order(x) - order(y));
+    const sides = new Set(hits.map((t) => t.hit.side)), side = sides.size === 1 && hits.length === tracks.length ? [...sides][0] : null;
+    label = { era, side: side?.side || null, tracks: tracks.map((t, i) => ({ title: t.title, n: t.hit ? t.hit.n : i + 1 })) };
+    title = side ? `${era.title} · Side ${side.side}` : `${era.title} (your files)`;
+  }
+  S.workerHasSource = true; S.man = null; pick++; markRecord(null, title);
+  S.stageTracks = tracks.map((t) => (t.hit ? { title: t.hit.title, stem: t.hit.file, era: t.hit.side.era.id, lp2: 'CD'.includes(t.hit.side.side) } : { title: t.title, stem: null, era: null }));
+  applyTheme(era, label);
+  for (const t of tracks) delete t.hit;
   worker.postMessage({ t: 'tracks', tracks, fs: 48000, cond: condition() }, transfer);
 }
 
@@ -241,31 +299,58 @@ function nowPlaying(title, time = '', playing = false) {
   $('t-records').classList.toggle('playing', playing);
   $('t-records').title = `Records: ${title}${time ? ' ' + time : ''}`;
 }
-function markRecord(r) {
+function markRecord(r, title = 'Your audio') {
   S.shelf = r?.tracks ? r : null;
-  S.recTitle = r ? r.title : 'Your audio'; nowPlaying(S.recTitle);
+  S.recTitle = r ? r.title : title; nowPlaying(S.recTitle);
+  S.marked = { r, title, theme: S.theme };
+  if (r) S.stageTracks = r.era ? r.tracks.map((k) => ({ title: k.title, stem: k.file, era: r.era.id, lp2: 'CD'.includes(r.side) })) : null;
+  if (r) applyTheme(r.era || null, r.era ? { era: r.era, side: r.side, tracks: r.tracks } : null);
   for (const b of shelf.querySelectorAll('button')) b.setAttribute('aria-current', String(b.dataset.id === r?.id));
-  credit.replaceChildren(r ? [r.credit, r.licence].filter(Boolean).join(' · ') : 'Your own audio');
+  credit.replaceChildren(r ? [r.credit, r.licence].filter(Boolean).join(' · ') : 'Your own audio, cut in this browser');
   if (r?.url) credit.append(' · ', Object.assign(document.createElement('a'), { href: r.url, target: '_blank', rel: 'noopener', textContent: 'source' }));
 }
-async function pickRecord(r) {
+// records/index.json lists the audio `npm run import` copied from your own library; a public deploy has none
+const library = fetch(new URL('../records/index.json', import.meta.url), { cache: 'no-store' }).then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
+async function pickRecord(r, opening = false) {
   const me = ++pick;
   markRecord(r);
   if (!r.tracks) return houseRecord();
   S.workerHasSource = false;
   try { await loadPrecompiled(`assets/${r.id}/`, me); }
-  catch (err) {                                 // not built (or stale): cut and press it here instead, which takes a while
-    console.info(`${r.title}: ${err.message || err}; mastering in the browser`);
-    if (me === pick) { S.man = null; master(r, me); }
+  catch (err) {                                 // not cut yet: cut and press it here from the library, which takes a while
+    if (me !== pick) return;
+    const lib = await library;
+    if (me !== pick) return;
+    if (r.tracks.every((k) => lib[k.file])) { console.info(`${r.title}: ${err.message || err}; mastering in the browser`); S.man = null; return master(r, me, undefined, lib); }
+    if (opening) return pickRecord(RECORDS[0]);  // nothing of yours here: open on the test pressing instead
+    idle(); askFor(r);
   }
 }
-async function master(r, me, seed) {            // the slow way: fetch the audio, then lathe and pressing plant in the worker
+// A side whose audio isn't here: ask for the visitor's own copies. Nothing is uploaded; it is cut in this tab.
+function askFor(r) {
+  $('byo-title').textContent = r.title;
+  $('byo-list').replaceChildren(...r.tracks.map((k) => Object.assign(document.createElement('li'), { textContent: k.title, value: k.n })));
+  status('');
+  $('byo').showModal();
+}
+$('byo-file').addEventListener('change', (e) => { cutFiles(e.target.files); e.target.value = ''; });
+$('byo').addEventListener('click', (e) => { if (e.target === $('byo')) $('byo').close(); });
+$('byo').addEventListener('close', () => {      // not now: show what is really on the platter again
+  const was = S.onPlatter;
+  if (S.brought) { S.brought = false; return; }   // files were chosen: they are on their way to the platter
+  if (!was || (S.marked?.r === was.r && S.marked?.title === was.title)) return;
+  markRecord(was.r, was.title);
+  if (!was.r) applyTheme(...was.theme);
+  pick++;                                       // and let nothing still loading for the abandoned side land
+});
+async function master(r, me, seed, lib) {       // the slow way: fetch the audio, then lathe and pressing plant in the worker
   try {
     busy();
+    lib ||= await library;
     const tracks = [], transfer = [];
     for (const k of r.tracks) {
       status(`Fetching ${k.title}...`);
-      const ab = await decodeAudio(new URL('../records/' + k.file, import.meta.url), 48000);
+      const ab = await decodeAudio(new URL('../records/' + lib[k.file], import.meta.url), 48000);
       if (me !== pick) return;
       const L = ab.getChannelData(0).slice(), R = ab.numberOfChannels > 1 ? ab.getChannelData(1).slice() : L.slice();
       tracks.push({ L, R, title: k.title }); transfer.push(L.buffer, R.buffer);
@@ -274,14 +359,23 @@ async function master(r, me, seed) {            // the slow way: fetch the audio
     worker.postMessage({ t: 'tracks', id: me, tracks, fs: 48000, opts: r.cut, cond: condition(), seed }, transfer);
   } catch (err) { console.error(err); if (me === pick) { idle(); status(`Could not load ${r.title}.`); } }
 }
-for (const r of RECORDS) {
-  const b = document.createElement('button');
+const el = (tag, props, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
+for (const r of [...RECORDS.slice(1), RECORDS[0]]) {          // the eras in order, the test pressing last
+  if (r.era && r.side === Object.keys(r.era.sides)[0]) {      // a heading for each era, in its own type and colour
+    const h = el('div', { className: 'era', title: r.era.theme.blurb }, el('b', { textContent: r.era.title }), el('span', { textContent: r.era.year }));
+    h.style.setProperty('--era-acc', r.era.theme.acc); h.style.setProperty('--era-font', r.era.theme.font);
+    shelf.insertBefore(h, credit);
+  } else if (!r.era) shelf.insertBefore(el('div', { className: 'era' }, el('b', { textContent: 'Elsewhere' })), credit);
+  const b = el('button', {}, el('b', { textContent: r.era ? r.side : r.title }),
+    el('span', { textContent: r.era ? r.tracks.map((k) => k.title).join(' · ') : r.by }));
   b.dataset.id = r.id;
-  b.append(Object.assign(document.createElement('b'), { textContent: r.title }), Object.assign(document.createElement('span'), { textContent: r.by }));
+  b.title = r.tracks ? r.tracks.map((k) => `${k.n}. ${k.title}`).join('\n') : r.credit;
+  if (r.era) { b.classList.add('side'); b.style.setProperty('--era-acc', r.era.theme.acc); }
   b.addEventListener('click', () => { pickRecord(r); b.blur(); });
   shelf.insertBefore(b, credit);
 }
-pickRecord(RECORDS.find((r) => r.id === (window.__boot?.id || 'rhapsody')) || RECORDS[0]);   // the record on the platter when the page opens
+shelf.insertBefore(el('label', { className: 'byo', htmlFor: 'f-audio', textContent: 'Cut your own files…' }), credit);
+pickRecord(RECORDS.find((r) => r.id === (window.__boot?.id || 'currents-a')) || RECORDS[0], true);   // the record on the platter when the page opens
 $('f-audio').addEventListener('change', (e) => cutFiles(e.target.files));
 addEventListener('dragover', (e) => e.preventDefault());
 addEventListener('drop', (e) => { e.preventDefault(); cutFiles(e.dataTransfer.files); });
@@ -380,8 +474,9 @@ function drawScope() {
   sc.fillStyle = '#060607'; sc.fill(fill);
   sc.strokeStyle = '#b9b2a6'; sc.lineWidth = 1.5; sc.stroke(edge);
   const xg = v[rows * cols * 2], hc = v[rows * cols * 2 + 1], down = hc < 40e-6;
-  sc.strokeStyle = 'rgba(255,180,84,.35)'; sc.lineWidth = 1; sc.beginPath(); sc.moveTo(w / 2, 0); sc.lineTo(w / 2, h); sc.stroke();
-  sc.fillStyle = down ? '#ffb454' : 'rgba(255,180,84,.25)';
+  const acc = S.accRGB || '255,180,84';
+  sc.strokeStyle = `rgba(${acc},.35)`; sc.lineWidth = 1; sc.beginPath(); sc.moveTo(w / 2, 0); sc.lineTo(w / 2, h); sc.stroke();
+  sc.fillStyle = down ? `rgb(${acc})` : `rgba(${acc},.25)`;
   sc.beginPath(); sc.arc(w / 2, Y(xg === xg ? xg : 0), Math.max(5, 13e-6 * k), 0, TAU); sc.fill();
 }
 const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -416,6 +511,21 @@ function drawStats() {
     : t.theta >= S.rec.thetaLock ? 'run-out' : t.theta > S.rec.tracks[S.rec.tracks.length - 1].theta1 ? 'lead-out' : t.theta < S.rec.tracks[0].theta0 ? 'lead-in' : 'between tracks');
 }
 
+// where the needle is, for the stage: which track, seconds into it (negative in the gap before it), how fast
+function songPos(t, dt) {
+  if (!t || !S.rec || t.recSeq !== S.rec.seq || !S.rec.tracks.length) return null;
+  // the engine runs ahead of the speakers by the output latency: the picture follows what is heard, not what was computed
+  const lat = ctx ? (ctx.outputLatency || 0) + (ctx.baseLatency || 0) : 0;
+  const on = t.hc < 40e-6 && t.xg === t.xg, th = t.theta + (on ? t.wp * (dt - lat) : 0), ks = S.rec.tracks;
+  let k = ks.findIndex((x) => th < x.theta1); if (k < 0) k = ks.length - 1;
+  return { k, t: (th - ks[k].theta0) / W33, on, rate: t.wp / W33, th };
+}
+function setVideo(on) {
+  video = on; try { localStorage.setItem('iv-video', on ? 'on' : 'off'); } catch {}
+  $('t-video').setAttribute('aria-pressed', String(on)); $('t-video').textContent = on ? 'Video on' : 'Video off';
+}
+if (stage && !PLAIN) { setVideo(video); $('t-video').addEventListener('click', () => setVideo(!video)); } else $('t-video').hidden = true;
+
 // ---------- frame loop ----------
 let frame = 0;
 // One failing part must never stop the frame loop: that froze the picture while the sound carried on.
@@ -430,6 +540,7 @@ function guard(name, fn) {
 addEventListener('error', (e) => { if (!seen.size) { seen.add('page'); status(`error: ${e.message}`); } });
 function tick() {
   requestAnimationFrame(tick);      // first, so nothing below can end the loop
+  if (S.film) return;               // ?film: frames are drawn on request, not in real time
   const t = S.tel, dt = t ? Math.min(0.1, (performance.now() - S.tRecv) / 1000) : 0;
   S.zoom += (S.zoomT - S.zoom) * 0.12;
   if (frame % 6 === 0 && S.on && !S.started) powerMsg();
@@ -441,10 +552,40 @@ function tick() {
   if (moved !== S.moved) { S.moved = moved; $('t-reset').hidden = !moved; }
   guard('render', () => {
     if (OG) renderer.draw({ thp: 2.2, al: alphaForRadius(0.108), zt: 0, zoom: 0, az: -0.5, el: 0.6, motor: true, rpm: 33.3333, bare: true, dist: 1.1, at: [0.021, -0.07, -0.093], ...window.__og });   // deck high in the frame: X overlays the bottom
-    else renderer.draw({ thp: t ? t.thp + t.wp * dt : 0, al: t ? t.al : ALPHA_REST, zt: t ? t.zb + t.ze : 5e-3, zoom: S.zoom, az: S.az, el: S.el, motor: S.motor, rpm: S.rpm });
+    else {
+      const now = performance.now(), fdt = S.tPrev ? Math.min(0.1, (now - S.tPrev) / 1000) : 0; S.tPrev = now;
+      let room = null;
+      if (stage && video) try { room = stage.update(fdt, songPos(t, dt)); } catch (err) { if (!S.roomErr) { S.roomErr = true; console.error('stage', err); } }   // the deck draws whatever the stage does
+      else stage?.words?.show(false);
+      if (!!room !== S.staged) { S.staged = !!room; document.documentElement.classList.toggle('staged', S.staged); }
+      const c = room ? room.cam : { az: 0, el: 0, zoom: 0, roll: 0 };
+      renderer.draw({ thp: t ? t.thp + t.wp * dt : 0, al: t ? t.al : ALPHA_REST, zt: t ? t.zb + t.ze : 5e-3, zoom: S.zoom + c.zoom, az: S.az + c.az, el: Math.max(0.02, Math.min(1.55, S.el + c.el)), roll: c.roll, motor: S.motor, rpm: S.rpm, bare: room?.bare });
+      if (room) try { stage.render(renderer.cam, room); } catch (err) { if (!S.renderErr) { S.renderErr = true; console.error('stage render', err); } }
+    }
   });
   if (frame++ % 2 === 0 && S.hudOn) guard('groove view', drawScope);
   if (frame % 6 === 0) guard('readout', drawStats);
 }
 tick();
-window.__rp = { S, get ctx() { return ctx; }, send, renderer, stylusXY };   // debugging handle
+// ?film: offline rendering, for recordings. __film.start() stops the real-time loop; __film.frame(t) draws the video
+// at exactly t seconds into the first track on the platter (needle there, platter turning) and returns the frame,
+// lyrics included, as a JPEG data URL. Nothing depends on the clock, so every frame lands exactly on its time.
+if (new URLSearchParams(location.search).has('film')) window.__film = {
+  ready: () => !!(S.rec && S.rtab && stage?.cur?.song && stage.cur.lyrics?.length),
+  start() { S.film = true; setMotor(false); send({ t: 'cue', up: true }); $('hud').style.display = 'none'; },
+  frame(t, fps = 30) {
+    const dt = 1 / fps, tr = S.rec.tracks[0], th = tr.theta0 + t * W33, song = stage.cur?.song;
+    // no speakers here: the beat comes from the song map instead of the deck's output
+    stage.fake = song ? (tt) => {
+      const a = song.at(tt), since = a.beatPhase * a.beatLen;
+      return { kick: Math.exp(-since * 9) * (0.35 + 0.65 * a.low), low: a.low, high: a.high, level: a.rms };
+    } : null;
+    const room = stage.update(dt, { k: 0, t, on: true, rate: 1, th }), c = room ? room.cam : { az: 0, el: 0, zoom: 0, roll: 0 };
+    renderer.draw({ thp: th, al: alphaForRadius(grooveRadius(S.rtab, th)), zt: 0, zoom: S.zoom + c.zoom, az: S.az + c.az, el: Math.max(0.02, Math.min(1.55, S.el + c.el)), roll: c.roll, motor: true, rpm: 33.3333, bare: room?.bare });
+    if (room) stage.render(renderer.cam, room);
+    const cc = this.cc ||= document.createElement('canvas'); cc.width = canvas.width; cc.height = canvas.height;
+    const x = cc.getContext('2d'); x.drawImage(canvas, 0, 0); x.drawImage($('words'), 0, 0, cc.width, cc.height);
+    return cc.toDataURL('image/jpeg', 0.93);
+  },
+};
+window.__rp = { S, get ctx() { return ctx; }, send, renderer, stylusXY, stage, seek: (k, sec) => { const x = S.rec?.tracks[k]; if (x) send({ t: 'cueTo', al: alphaForRadius(grooveRadius(S.rtab, x.theta0 + sec * W33)) }); } };   // debugging handle

@@ -118,8 +118,13 @@ export class Renderer {
     const at = st.at || [lerp(0.042, sx, zi), lerp(0, sy, zi), lerp(-0.015, 0, zi)], base = Math.max(0.95, 0.95 * 1.5 / asp);
     const dist = st.dist || (z >= 0 ? lerp(base, 0.06, z) : base * Math.exp(-0.9 * z)), ce = Math.cos(st.el);   // z < 0 pulls back
     const eye = [at[0] + dist * ce * Math.sin(st.az), at[1] - dist * ce * Math.cos(st.az), at[2] + dist * Math.sin(st.el)];
-    const v = G.lookAt(eye, at);
-    this.cam = { eye, asp, ...v, vp: G.mul(G.perspective(FOV, asp, lerp(0.05, 0.004, zi), 150), v.m) };
+    let up = [0, 0, 1];
+    if (st.roll) {                                // bank: turn the up vector about the view direction (the stage's camera moves)
+      const f = G.norm([at[0] - eye[0], at[1] - eye[1], at[2] - eye[2]]), r = G.norm([f[1], -f[0], 0]), u = [r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0]];
+      up = u.map((x, i) => x * Math.cos(st.roll) + r[i] * Math.sin(st.roll));
+    }
+    const v = G.lookAt(eye, at, up), proj = G.perspective(FOV, asp, lerp(0.05, 0.004, zi), 150);
+    this.cam = { eye, asp, ...v, proj, vp: G.mul(proj, v.m) };
     return this.cam;
   }
 
@@ -151,6 +156,8 @@ export class Renderer {
     const dpr = Math.min(2, window.devicePixelRatio || 1), w = Math.round(c.clientWidth * dpr), h = Math.round(c.clientHeight * dpr);
     if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
     const cam = this.camera(st);
+    // the stage (three.js) shares this context: put back the state the deck expects
+    gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS); gl.depthMask(true); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE); gl.colorMask(true, true, true, true);
     const spin = G.Rz(-st.thp), discM = G.chain(spin, G.T(ecc[0], ecc[1], 0));
     const arm = G.chain(G.T(PIVOT_X, PIVOT_Y, PIVOT_H), G.Rz(st.al), G.Ry(-Math.asin(Math.max(-0.2, Math.min(0.2, st.zt / ARM_LE)))));
     const head = G.chain(arm, G.T(ARM_LE, 0, 0), G.Rz(-ARM_BETA));
@@ -182,7 +189,7 @@ export class Renderer {
 
     // 2. beauty pass
     gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, w, h);
-    if (st.bare) gl.clearColor(0, 0, 0, 1); else gl.clearColor(0.004, 0.004, 0.005, 1);
+    if (st.bare) gl.clearColor(0, 0, 0, 1); else gl.clearColor(...(this.bg || [0.004, 0.004, 0.005]), 1);   // bg: tinted by the era (main.js)
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, this.tex.shadow);
     const common = (u) => {

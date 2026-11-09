@@ -1,33 +1,66 @@
-# vinyl
+# impala-vinyl
 
-A record player simulated "from the groove up" in the browser: **[vinyl-gl.vercel.app](https://vinyl-gl.vercel.app)**.
+Tame Impala, every era, on a record player simulated "from the groove up". A fork of [rauchg/vinyl](https://github.com/rauchg/vinyl), in the spirit of [ilmc-vinyl](https://github.com/SunkenInTime/ilmc-vinyl).
 
-Instead of playing an audio file, the music is cut into a spiral [groove](https://en.wikipedia.org/wiki/Phonograph_record), and a simulated [stylus](https://en.wikipedia.org/wiki/Phonograph#Stylus), cantilever, [tonearm](https://en.wikipedia.org/wiki/Phonograph#Arm_systems) and [cartridge](https://en.wikipedia.org/wiki/Magnetic_cartridge) read it back on the audio thread. What you hear is the voltage that motion would induce in the cartridge, after phono equalisation.
+The music isn't played back from a file. It is cut into a spiral groove, and a simulated stylus, cantilever, tonearm and cartridge read it back on the audio thread.
 
-This is a _physical simulation_ of a record player's mechanics, which happen to play sound.
+## What's here
 
-## Features
+- **The whole discography as records.** Each side of each era is its own record on the shelf, split the way the vinyl pressings split it:
+  - the 2008 EP (2 sides)
+  - *Innerspeaker*, *Lonerism*, *Currents*, *The Slow Rush* and *Deadbeat* (4 sides each)
+  - a white-label *B-Sides & Rarities* (3 sides)
+- **A label and a room per era.** Every label is drawn in code ([`src/label.js`](src/label.js)): a painted sun, a valley folding into itself, railings in summer light, flow lines bending round a chrome sphere, a room filling with sand, a speaker cone at 4 a.m. The page's accent colour, type and the glow around the deck change with the record. These are original fan designs that nod to each era; none of the real artwork is used.
+- **No Tame Impala audio in this repository.** Your own library is cut locally. Anyone else gets a prompt to bring their own files, which are matched to the catalogue by title tag or file name ([`src/tags.js`](src/tags.js)), put in album order and cut in the browser. Nothing is uploaded.
 
-- **"Real", procedural flaws**: hiss and crackle are roughness and dust on the groove walls. A scratch ticks once per turn because the needle crosses it once per turn. Treble dulls toward the label because the groove moves slower there. Knock the table and it skips.
-- **Real physics, in real time**: a 2 DOF stylus tip on [Hertzian](https://en.wikipedia.org/wiki/Contact_mechanics#Hertzian_theory_of_non-adhesive_elastic_contact) wall contacts with friction, oversampled inside an `AudioWorklet`, with platter inertia, arm kinematics, [RIAA de-emphasis](https://en.wikipedia.org/wiki/RIAA_equalization) and three stylus shapes (conical, elliptical, micro-line).
-- **Bring your own audio**: _Cut a file_ runs the lathe on anything you drop in, in a worker, in the browser. _Press again_ makes a dirtier (or cleaner) copy of the same cut.
-- **No dependencies, no bundler**: plain ES modules, WebGL2 and Web Audio. The build copies files.
+## The music video (Currents, so far)
 
-## Running it
+On a Currents side the deck plays inside a music video ([`src/stage/`](src/stage/)), after [ilmc-vinyl](https://github.com/SunkenInTime/ilmc-vinyl)'s room:
+
+- **The world.** The turntable floats over a river of flow lines that parts round it, like the sphere on the Currents cover. The wake behind it goes turbulent and rainbow-coloured, and a chrome orb hangs in the sky ([`worlds/currents.js`](src/stage/worlds/currents.js)).
+- **Everything follows the needle.** Scratch the record and the video runs backwards, stop the platter and it freezes, drop the needle and it jumps.
+- **"Let It Happen" is a journey off the ground**, choreographed by hand ([`cues/let-it-happen.js`](src/stage/cues/let-it-happen.js)):
+  - The whirlwind lifts the deck off the river, it takes off, climbs through the clouds into space, and a planet rises beneath ([`worlds/space.js`](src/stage/worlds/space.js)).
+  - At 3:49, where the record sticks on one beat, the camera goes down the stylus into the groove. The canyon's walls are the real cut under the needle, sampled as it plays, so they loop with the music ([`worlds/groove.js`](src/stage/worlds/groove.js)).
+  - At 4:43 it comes out at dawn in orbit; the planet's ring is a record.
+  - Then hyperspace, a mustard nebula for the vocoder, a galaxy wound like a groove, and finally into the chrome sun.
+- **Other songs follow the sections of their song map.** `npm run analyze` writes [`assets/maps/`](assets/maps/): beats, bars, sections, stuck loops and loudness envelopes. These are derived data, not audio, so they are committed and deployed.
+- **Lyrics** come from [LRCLIB](https://lrclib.net) when a song plays; the text is not stored here. LRCLIB only times lines, by hand, so `npm run align` ([`tools/align-lyrics.py`](tools/align-lyrics.py)) listens to your copy of each song with Whisper (on the GPU) and times every sung word. It writes [`assets/lyrics/`](assets/lyrics/): word times and a hash of each line, no text. These are committed, so the public site is in sync too. One-time setup: `python -m venv tools/.venv`, then `tools/.venv/Scripts/pip install faster-whisper nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*"`. The first run downloads the large-v3 model, about 3 GB.
+- `Video off` in the top bar, or `?plain`, turns it off. Flashing is toned down when the system asks for reduced motion.
+
+## Running it with your own library
+
+You need Node 22+ and `ffmpeg` on PATH.
 
 ```bash
-$ vercel dev
+$ npm run import    # find your Tame Impala files (default ~/Music) and copy them into records/
+$ npm run lathe     # cut every side whose tracks were all found into assets/<side>/ (about 25 s per side)
+$ npm run serve     # http://localhost:4173
 ```
 
-That's it. `vercel dev` runs the same build as production (`node build.mjs`, which writes `dist/`) and serves it on [localhost:3000](http://localhost:3000). It builds once, so restart it after editing.
+What `npm run import` does:
 
-There's nothing to install. Node 22+ is enough for the build and the tests:
+- It matches each track in [`src/catalog.js`](src/catalog.js) to a file by title. A file only counts if its name, a folder above it, or its artist tag says Tame Impala.
+- Lossless copies win over lossy ones.
+- It never reads a folder named `tame impala unreleased`.
+- To point it somewhere else: `npm run import -- "D:\Music"`, or set `MUSIC_DIR`.
+
+What `npm run lathe` does:
+
+- A loud side that doesn't fit on one side of a 12" disc is cut quieter until it does, as a mastering engineer would.
+- Plain `node lathe.mjs` re-cuts only the synthesised test pressing; `node lathe.mjs currents-a` re-cuts just that side.
+
+`records/` and `assets/<side>/` are git-ignored. They hold about 3.5 GB, and that is copyrighted music, so they are never committed and never deployed.
+
+## Deploying
 
 ```bash
-$ npm run build   # dist/: index.html, src/, assets/, records/
-$ npm test        # offline checks of the physics: response, distortion, surface noise, cue, skip
-$ npm run bench   # CPU cost of the engine per second of audio
+$ npm run build                      # dist/: the page, src/ and the test pressing; no music
+$ node build.mjs --with-audio        # also your cut sides and records/: for a private build only
+$ npm test                           # offline checks of the physics
 ```
+
+On a public deploy the page opens on the synthesised test pressing. Picking any side asks for the visitor's own files.
 
 ## How it works
 
@@ -39,36 +72,18 @@ $ npm run bench   # CPU cost of the engine per second of audio
 
 **4️⃣ Draw.** The deck ([`src/render.js`](src/render.js), [`src/shaders.js`](src/shaders.js)) draws the disc from the cut itself: the actual spiral, lit by how hard each revolution is modulated.
 
-## Records
+## Records and the catalogue
 
-Cutting a whole side takes a while, so the records on the shelf are cut ahead of time and committed to `assets/`. The clean cut ships as 16-bit [DPCM](https://en.wikipedia.org/wiki/Differential_pulse-code_modulation) inside FLAC (within a quarter of a nanometre of the cut wall), and the page presses it with the seed. The source audio lives in `records/`, listed in [`src/records.js`](src/records.js).
+- [`src/catalog.js`](src/catalog.js) lists the eras, their sides and track titles, and each era's theme.
+- [`src/records.js`](src/records.js) turns every side into a shelf record.
+- [`src/label.js`](src/label.js) has one painter per era.
 
-To add a record, or after changing the lathe, re-cut what's out of date (needs `ffmpeg`) and commit `assets/`:
+To change a side, edit its titles in the catalogue, then run `npm run import` and `node lathe.mjs <side-id>` (for example `node lathe.mjs currents-a`).
 
-```bash
-$ npm run lathe           # every record that is out of date
-$ node lathe.mjs toccata  # just this one
-```
-
-The build refuses to deploy a shelf record that was never cut.
+The cut ships as 16-bit [DPCM](https://en.wikipedia.org/wiki/Differential_pulse-code_modulation) inside FLAC, within a quarter of a nanometre of the cut wall, and the page presses it with a seed.
 
 ## Credits
 
-Every recording is public domain or freely licensed:
-
-- Gershwin, _Rhapsody in Blue_: George Gershwin, piano, with Paul Whiteman's Concert Orchestra, Victor, 1924 ([LOC](https://www.loc.gov/item/jukebox-70342/))
-- Beethoven, _Moonlight Sonata_: Paul Pitman, piano, for Musopen
-- Satie, _Gymnopédie No. 1_: Robin Alciatore, piano, for Musopen
-- Chopin, _Nocturne Op. 9 No. 2_: Frank Lévy, piano, for Musopen
-- Debussy, _Clair de lune_: Laurens Goedhart, piano, 2011
-- Grieg, _In the Hall of the Mountain King_: Musopen Symphony
-- Tchaikovsky, _1812 Overture_: US Marine Band, live at Wolf Trap, 2019
-- Bach, _Toccata and Fugue_: Ashtar Moïra, organ
-- Vivaldi, _Summer: Presto_: John Harrison, violin, with the Wichita State University Chamber Players (CC BY-SA 4.0)
-- HoliznaCC0, _Summer Air_ (CC0, [Free Music Archive](https://freemusicarchive.org/music/holiznacc0/summer-air-lo-fi/))
-
-Sources for each are linked in [`src/records.js`](src/records.js). The _Demo EP_ is synthesised by the page.
-
-## License
-
-The code is [MIT](LICENSE). The recordings in `records/`, and the records cut from them in `assets/`, keep their own licenses, listed above. _Summer: Presto_ is CC BY-SA 4.0, so its cut is too.
+- The record player, the physics and the rendering: [Guillermo Rauch's vinyl](https://github.com/rauchg/vinyl) (MIT).
+- The idea of an artist-themed fork: [ilmc-vinyl](https://github.com/SunkenInTime/ilmc-vinyl).
+- Music: Tame Impala (Kevin Parker). This is an unofficial fan project, not affiliated with the artist or the labels. Bring your own copies.

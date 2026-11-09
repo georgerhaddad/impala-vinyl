@@ -6,3 +6,14 @@ tmp
 assets/.building
 *.tmp
 .env*
+
+# Tame Impala audio and everything cut from it: your own library, never committed or deployed
+# (npm run import -> records/, npm run lathe -> assets/<side>/)
+records/
+assets/*/
+!assets/maps/
+!assets/lyrics/
+
+# the lyric aligner's Python environment (tools/align-lyrics.py) and its model cache
+tools/.venv/
+tools/.models/

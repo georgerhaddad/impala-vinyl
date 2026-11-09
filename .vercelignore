@@ -1,5 +1,10 @@
-# Only what build.mjs needs: index.html, src/, assets/ (precompiled records), records/ (their audio).
+# Only what build.mjs needs: index.html, src/, assets/record.* (the test pressing). Never the music.
 dist
 test
 songs
+tools
+records
+assets/*/
+!assets/maps
+!assets/lyrics
 lathe.mjs

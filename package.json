@@ -1,15 +1,19 @@
 {
-  "name": "vinyl",
+  "name": "impala-vinyl",
   "private": true,
-  "description": "A record player simulated from the groove up",
+  "description": "Tame Impala, every era, on a record player simulated from the groove up",
   "license": "MIT",
-  "repository": "github:rauchg/vinyl",
-  "homepage": "https://vinyl-gl.vercel.app",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "scripts": {
-    "build": "node build.mjs",
+    "import": "node tools/import.mjs",
     "lathe": "node lathe.mjs all",
+    "analyze": "node tools/analyze.mjs",
+    "align": "tools/.venv/Scripts/python tools/align-lyrics.py",
+    "build": "node build.mjs",
+    "serve": "npx --yes serve@14.2.4 -l 4173 .",
     "test": "node test/basic.mjs && node test/response.mjs && node test/noise.mjs && node test/scenario.mjs",
     "bench": "node test/bench.mjs"
   }
