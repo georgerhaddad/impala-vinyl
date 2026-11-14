@@ -567,20 +567,20 @@ function tick() {
   if (frame % 6 === 0) guard('readout', drawStats);
 }
 tick();
-// ?film: offline rendering, for recordings. __film.start() stops the real-time loop; __film.frame(t) draws the video
-// at exactly t seconds into the first track on the platter (needle there, platter turning) and returns the frame,
+// ?film: offline rendering, for recordings. __film.start() stops the real-time loop; __film.frame(t, fps, k) draws the video
+// at exactly t seconds into track k on the platter (the first by default; needle there, platter turning) and returns the frame,
 // lyrics included, as a JPEG data URL. Nothing depends on the clock, so every frame lands exactly on its time.
 if (new URLSearchParams(location.search).has('film')) window.__film = {
   ready: () => !!(S.rec && S.rtab && stage?.cur?.song && stage.cur.lyrics?.length),
   start() { S.film = true; setMotor(false); send({ t: 'cue', up: true }); $('hud').style.display = 'none'; },
-  frame(t, fps = 30) {
-    const dt = 1 / fps, tr = S.rec.tracks[0], th = tr.theta0 + t * W33, song = stage.cur?.song;
+  frame(t, fps = 30, k = 0) {
+    const dt = 1 / fps, tr = S.rec.tracks[k], th = tr.theta0 + t * W33, song = stage.cur?.song;
     // no speakers here: the beat comes from the song map instead of the deck's output
     stage.fake = song ? (tt) => {
       const a = song.at(tt), since = a.beatPhase * a.beatLen;
       return { kick: Math.exp(-since * 9) * (0.35 + 0.65 * a.low), low: a.low, high: a.high, level: a.rms };
     } : null;
-    const room = stage.update(dt, { k: 0, t, on: true, rate: 1, th }), c = room ? room.cam : { az: 0, el: 0, zoom: 0, roll: 0 };
+    const room = stage.update(dt, { k, t, on: true, rate: 1, th }), c = room ? room.cam : { az: 0, el: 0, zoom: 0, roll: 0 };
     renderer.draw({ thp: th, al: alphaForRadius(grooveRadius(S.rtab, th)), zt: 0, zoom: S.zoom + c.zoom, az: S.az + c.az, el: Math.max(0.02, Math.min(1.55, S.el + c.el)), roll: c.roll, motor: true, rpm: 33.3333, bare: room?.bare });
     if (room) stage.render(renderer.cam, room);
     const cc = this.cc ||= document.createElement('canvas'); cc.width = canvas.width; cc.height = canvas.height;

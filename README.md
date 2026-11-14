@@ -13,20 +13,42 @@ The music isn't played back from a file. It is cut into a spiral groove, and a s
 - **A label and a room per era.** Every label is drawn in code ([`src/label.js`](src/label.js)): a painted sun, a valley folding into itself, railings in summer light, flow lines bending round a chrome sphere, a room filling with sand, a speaker cone at 4 a.m. The page's accent colour, type and the glow around the deck change with the record. These are original fan designs that nod to each era; none of the real artwork is used.
 - **No Tame Impala audio in this repository.** Your own library is cut locally. Anyone else gets a prompt to bring their own files, which are matched to the catalogue by title tag or file name ([`src/tags.js`](src/tags.js)), put in album order and cut in the browser. Nothing is uploaded.
 
-## The music video (Currents, so far)
+## The music video
 
-On a Currents side the deck plays inside a music video ([`src/stage/`](src/stage/)), after [ilmc-vinyl](https://github.com/SunkenInTime/ilmc-vinyl)'s room:
+Every side plays inside a music video ([`src/stage/`](src/stage/)), after [ilmc-vinyl](https://github.com/SunkenInTime/ilmc-vinyl)'s room. Each era has its own world around the deck, loaded the first time one of its records plays:
 
-- **The world.** The turntable floats over a river of flow lines that parts round it, like the sphere on the Currents cover. The wake behind it goes turbulent and rainbow-coloured, and a chrome orb hangs in the sky ([`worlds/currents.js`](src/stage/worlds/currents.js)).
+- **EP**: a painted sun of concentric rings over wavy gouache hills. Each kick steps the rings outward ([`worlds/ep.js`](src/stage/worlds/ep.js)).
+- **Innerspeaker**: a valley that contains itself, smaller, further in, so the zoom never ends. It can roll up round the deck into a tunnel. Sky on the first disc, autumn on the second ([`worlds/innerspeaker.js`](src/stage/worlds/innerspeaker.js)).
+- **Lonerism**: the deck on the paving behind park railings, the crowd out of focus on the lawn beyond, in an overexposed print with a pink light leak ([`worlds/lonerism.js`](src/stage/worlds/lonerism.js)).
+- **Currents**: a river of flow lines that parts round the deck, like the sphere on the cover, with a chrome orb in the sky ([`worlds/currents.js`](src/stage/worlds/currents.js)).
+- **The Slow Rush**: an abandoned red room sinking into the dunes, sand pouring through the roof, and the sun crossing the sky once a song ([`worlds/slow-rush.js`](src/stage/worlds/slow-rush.js)).
+- **Deadbeat**: a bush rave at 4 a.m. Speaker stacks, smoke, moving heads and a slow-shutter camera flash on the beat ([`worlds/deadbeat.js`](src/stage/worlds/deadbeat.js)).
+- **B-Sides & Rarities**: a white-label test pressing. The floor is a lathe drawing that scribes itself from the music, with pop-up sleeves, VU meters and stamps ([`worlds/rarities.js`](src/stage/worlds/rarities.js)).
+
+How it is driven:
+
 - **Everything follows the needle.** Scratch the record and the video runs backwards, stop the platter and it freezes, drop the needle and it jumps.
-- **"Let It Happen" is a journey off the ground**, choreographed by hand ([`cues/let-it-happen.js`](src/stage/cues/let-it-happen.js)):
+- **Standout songs are choreographed by hand** ([`cues/`](src/stage/cues/)), each with its own arc, timed to its song map and its sung words:
+  - *Innerspeaker*: Alter Ego, Solitude Is Bliss, Expectation, Runway Houses City Clouds.
+  - *Lonerism*: Apocalypse Dreams, Mind Mischief, Feels Like We Only Go Backwards (a day in the park played from dusk back to dawn), Elephant (something enormous on the lawn, seen only as its shadow).
+  - *Currents*: Let It Happen, Yes I'm Changing, Eventually, The Less I Know The Better, New Person, Same Old Mistakes.
+  - *The Slow Rush*: One More Year, Borderline, Breathe Deeper, Lost In Yesterday, One More Hour.
+  - *Deadbeat*: My Old Ways, Dracula, Loser, Ethereal Connection, End Of Summer (one long sunrise).
+  - *Rarities*: Patience (the sheet becomes a sundial), The Boat I Row (the sheet becomes a sea chart).
+- **"Let It Happen" is a journey off the ground** ([`cues/let-it-happen.js`](src/stage/cues/let-it-happen.js)):
   - The whirlwind lifts the deck off the river, it takes off, climbs through the clouds into space, and a planet rises beneath ([`worlds/space.js`](src/stage/worlds/space.js)).
   - At 3:49, where the record sticks on one beat, the camera goes down the stylus into the groove. The canyon's walls are the real cut under the needle, sampled as it plays, so they loop with the music ([`worlds/groove.js`](src/stage/worlds/groove.js)).
   - At 4:43 it comes out at dawn in orbit; the planet's ring is a record.
   - Then hyperspace, a mustard nebula for the vocoder, a galaxy wound like a groove, and finally into the chrome sun.
-- **Other songs follow the sections of their song map.** `npm run analyze` writes [`assets/maps/`](assets/maps/): beats, bars, sections, stuck loops and loudness envelopes. These are derived data, not audio, so they are committed and deployed.
+- **Every other song follows the sections of its song map**, with the world's own act for each kind of section (intro, quiet, build, full, break, outro). `npm run analyze` writes [`assets/maps/`](assets/maps/): beats, bars, sections, stuck loops and loudness envelopes. These are derived data, not audio, so they are committed and deployed.
 - **Lyrics** come from [LRCLIB](https://lrclib.net) when a song plays; the text is not stored here. LRCLIB only times lines, by hand, so `npm run align` ([`tools/align-lyrics.py`](tools/align-lyrics.py)) listens to your copy of each song with Whisper (on the GPU) and times every sung word. It writes [`assets/lyrics/`](assets/lyrics/): word times and a hash of each line, no text. These are committed, so the public site is in sync too. One-time setup: `python -m venv tools/.venv`, then `tools/.venv/Scripts/pip install faster-whisper nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*"`. The first run downloads the large-v3 model, about 3 GB.
 - `Video off` in the top bar, or `?plain`, turns it off. Flashing is toned down when the system asks for reduced motion.
+
+Adding to it:
+
+- A world is a class with `constructor(r)`, `update(dt, p, s, loopT)` and `render(r, cam)`, registered by era in [`src/stage/index.js`](src/stage/index.js). The comment above `WORLDS` lists the optional hooks: its act per section kind, how its lyrics are set, the ink for the words, a say over the post pass.
+- A cue sheet is a list of acts that each say only what changes, plus events on the beat. Every act knob is in `DEFAULTS` in the same file; an era's own knobs are 0 when absent, and are explained at the top of its world.
+- `?film` renders exact frames offline: `__film.start()`, then `__film.frame(seconds, fps, track)` returns the frame, lyrics included, as a JPEG data URL.
 
 ## Running it with your own library
 
