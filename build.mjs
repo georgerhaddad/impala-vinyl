@@ -4,7 +4,7 @@
 // Tame Impala sides cut from your own library (assets/<side>/, records/) are left out, so a public deploy
 // never serves the music; visitors bring their own files instead. `node build.mjs --with-audio` includes
 // them, for a private build you only serve to yourself.
-import { cpSync, existsSync, rmSync, readdirSync } from 'node:fs';
+import { cpSync, existsSync, rmSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -17,7 +17,14 @@ if (!existsSync(join(root, 'assets/record.json'))) {
 
 rmSync(dist, { recursive: true, force: true });
 const skip = (src) => !/(\.building|\.tmp)$/.test(src);
-for (const f of ['index.html', 'og.png', 'src']) cpSync(join(root, f), join(dist, f), { recursive: true, filter: skip });
+for (const f of ['og.png', 'src']) cpSync(join(root, f), join(dist, f), { recursive: true, filter: skip });
+
+// Share previews need absolute URLs, so index.html says %SITE_URL% and the build fills in where it is deployed:
+// SITE_URL if set, else the Vercel project's production domain (custom domain included), else this deployment's URL.
+const host = process.env.SITE_URL || process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
+const site = host ? (/^https?:\/\//.test(host) ? host : `https://${host}`).replace(/\/+$/, '') : '';
+if (!site) console.warn('no SITE_URL (or Vercel deployment URL): share previews will use relative URLs, which most sites ignore');
+writeFileSync(join(dist, 'index.html'), readFileSync(join(root, 'index.html'), 'utf8').replaceAll('%SITE_URL%', site));
 for (const f of readdirSync(join(root, 'assets'))) if (/^record\./.test(f)) cpSync(join(root, 'assets', f), join(dist, 'assets', f));
 for (const d of ['maps', 'lyrics']) if (existsSync(join(root, 'assets', d))) cpSync(join(root, 'assets', d), join(dist, 'assets', d), { recursive: true });   // song maps and lyric timings: no audio, no lyric text
 let sides = 0;

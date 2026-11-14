@@ -85,6 +85,8 @@ $ npm test                           # offline checks of the physics
 
 On a public deploy the page opens on the synthesised test pressing. Picking any side asks for the visitor's own files.
 
+The share-preview tags in `index.html` say `%SITE_URL%`, and the build fills in the deployed address. On Vercel that is the project's production domain, custom domain included. Anywhere else, set it yourself: `SITE_URL=https://example.com npm run build`.
+
 ## How it works
 
 **1️⃣ Cut.** The lathe ([`src/cut.js`](src/cut.js)) turns audio into the shape of the two walls of a [45/45 stereo groove](https://en.wikipedia.org/wiki/Phonograph_record#Stereophonic_sound) at 33⅓ rpm: RIAA pre-emphasis, an acceleration limiter so the cutter could have cut it, and a spiral pitched so the side fits on a 12" disc.
