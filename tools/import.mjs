@@ -1,11 +1,12 @@
 // Copies your own Tame Impala audio into records/ so the lathe can cut it, and writes records/index.json.
 //
 //   npm run import                      # looks in ~/Music
-//   npm run import -- "D:\Some\Library"  # or anywhere else (MUSIC_DIR works too)
+//   npm run import -- "path/to/music"   # or anywhere else (MUSIC_DIR works too)
+//   MUSIC_SKIP="demos;bootlegs"         # folder names never read, separated by ;
 //
 // Every track in src/catalog.js is matched by title against the audio files it finds. A file only counts if
 // something says it is Tame Impala: its name, a folder above it, or its artist tag (read with ffprobe).
-// Lossless beats lossy, then the bigger file wins. Folders named "tame impala unreleased" are never read.
+// Lossless beats lossy, then the bigger file wins. MUSIC_DIR and MUSIC_SKIP can also go in a git-ignored .env.
 // Nothing in your library is changed; records/ is git-ignored and never deployed.
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, readdirSync, statSync, writeFileSync, rmSync, existsSync } from 'node:fs';
@@ -15,8 +16,9 @@ import { fileURLToPath } from 'node:url';
 import { ALL_TRACKS, norm } from '../src/catalog.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url)), out = join(root, 'records');
+try { process.loadEnvFile(join(root, '.env')); } catch {}
 const music = process.argv[2] || process.env.MUSIC_DIR || join(homedir(), 'Music');
-const SKIP_DIR = /^(tame impala unreleased|\.git|node_modules)$/i;
+const SKIP_DIR = new Set(['.git', 'node_modules', ...(process.env.MUSIC_SKIP || '').split(';').map((s) => s.trim().toLowerCase()).filter(Boolean)]);
 const AUDIO = /\.(flac|wav|aiff?|m4a|mp3|ogg|opus|aac)$/i, LOSSLESS = /\.(flac|wav|aiff?)$/i;
 const SAYS_TI = /tame[\s_-]*impala|kevin parker/i;
 const ffprobe = spawnSync('ffprobe', ['-version']).status === 0;
@@ -29,7 +31,7 @@ const files = [];
   let ents; try { ents = readdirSync(dir, { withFileTypes: true }); } catch { return; }
   for (const e of ents) {
     const p = join(dir, e.name);
-    if (e.isDirectory()) { if (!SKIP_DIR.test(e.name) && depth < 12) walk(p, depth + 1); }
+    if (e.isDirectory()) { if (!SKIP_DIR.has(e.name.toLowerCase()) && depth < 12) walk(p, depth + 1); }
     else if (e.isFile() && AUDIO.test(e.name)) files.push(p);
   }
 })(music, 0);

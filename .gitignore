@@ -17,3 +17,4 @@ assets/*/
 # the lyric aligner's Python environment (tools/align-lyrics.py) and its model cache
 tools/.venv/
 tools/.models/
+__pycache__/

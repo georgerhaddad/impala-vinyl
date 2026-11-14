@@ -41,7 +41,7 @@ How it is driven:
   - At 4:43 it comes out at dawn in orbit; the planet's ring is a record.
   - Then hyperspace, a mustard nebula for the vocoder, a galaxy wound like a groove, and finally into the chrome sun.
 - **Every other song follows the sections of its song map**, with the world's own act for each kind of section (intro, quiet, build, full, break, outro). `npm run analyze` writes [`assets/maps/`](assets/maps/): beats, bars, sections, stuck loops and loudness envelopes. These are derived data, not audio, so they are committed and deployed.
-- **Lyrics** come from [LRCLIB](https://lrclib.net) when a song plays; the text is not stored here. LRCLIB only times lines, by hand, so `npm run align` ([`tools/align-lyrics.py`](tools/align-lyrics.py)) listens to your copy of each song with Whisper (on the GPU) and times every sung word. It writes [`assets/lyrics/`](assets/lyrics/): word times and a hash of each line, no text. These are committed, so the public site is in sync too. One-time setup: `python -m venv tools/.venv`, then `tools/.venv/Scripts/pip install faster-whisper nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*"`. The first run downloads the large-v3 model, about 3 GB.
+- **Lyrics** come from [LRCLIB](https://lrclib.net) when a song plays; the text is not stored here. LRCLIB only times lines, by hand, so `npm run align` ([`tools/align-lyrics.py`](tools/align-lyrics.py)) listens to your copy of each song with Whisper (on the GPU if there is one) and times every sung word. It writes [`assets/lyrics/`](assets/lyrics/): word times and a hash of each line, no text. These are committed, so the public site is in sync too. One-time setup: `python -m venv tools/.venv`, then install `faster-whisper` with that environment's pip (`tools/.venv/Scripts/pip` on Windows, `tools/.venv/bin/pip` elsewhere), plus `nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*"` if you have an NVIDIA GPU. Without one it runs on the CPU with the smaller medium model, slowly. The first GPU run downloads the large-v3 model, about 3 GB.
 - `Video off` in the top bar, or `?plain`, turns it off. Flashing is toned down when the system asks for reduced motion.
 
 Adding to it:
@@ -64,8 +64,9 @@ What `npm run import` does:
 
 - It matches each track in [`src/catalog.js`](src/catalog.js) to a file by title. A file only counts if its name, a folder above it, or its artist tag says Tame Impala.
 - Lossless copies win over lossy ones.
-- It never reads a folder named `tame impala unreleased`.
-- To point it somewhere else: `npm run import -- "D:\Music"`, or set `MUSIC_DIR`.
+- To point it somewhere else: `npm run import -- "path/to/music"`, or set `MUSIC_DIR`.
+- To leave folders out, set `MUSIC_SKIP` to their names, separated by `;`.
+- Both can go in a `.env` file at the root, which is git-ignored.
 
 What `npm run lathe` does:
 

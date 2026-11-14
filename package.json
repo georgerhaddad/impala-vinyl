@@ -11,7 +11,7 @@
     "import": "node tools/import.mjs",
     "lathe": "node lathe.mjs all",
     "analyze": "node tools/analyze.mjs",
-    "align": "tools/.venv/Scripts/python tools/align-lyrics.py",
+    "align": "node tools/align.mjs",
     "build": "node build.mjs",
     "serve": "npx --yes serve@14.2.4 -l 4173 .",
     "test": "node test/basic.mjs && node test/response.mjs && node test/noise.mjs && node test/scenario.mjs",

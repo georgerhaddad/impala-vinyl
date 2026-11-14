@@ -1,7 +1,7 @@
 """Times every sung word of the lyrics against your own audio, so the video's words land when they are sung.
 
-    tools/.venv/Scripts/python tools/align-lyrics.py                               # every track in records/index.json
-    tools/.venv/Scripts/python tools/align-lyrics.py currents/01-let-it-happen     # just these
+    npm run align                                  # every track in records/index.json
+    npm run align -- currents/01-let-it-happen     # just these
 
 LRCLIB (the lyrics the page shows) only gives a start time per line, written by hand for some release of the song.
 This listens to the audio in records/ with Whisper (faster-whisper, on the GPU if there is one), one window around
@@ -10,7 +10,8 @@ sequence alignment) and takes their times. Words it could not hear are spread be
 
 What it writes, assets/lyrics/<stem>.json, holds TIMES ONLY: no lyric text is stored in the repository. Each line
 carries a hash of its text, so the page only uses the times when the lyrics it fetched are the same ones.
-Setup (once): python -m venv tools/.venv; tools/.venv/Scripts/pip install faster-whisper nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*"
+Setup (once): python -m venv tools/.venv, then with its pip (tools/.venv/Scripts/pip on Windows, tools/.venv/bin/pip
+elsewhere) install faster-whisper, plus nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*" if there is an NVIDIA GPU.
 """
 import json, os, re, subprocess, sys, time, unicodedata, urllib.parse, urllib.request
 from difflib import SequenceMatcher
@@ -19,8 +20,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 RECORDS, OUT = ROOT / 'records', ROOT / 'assets' / 'lyrics'
 SR = 16000
-# the CUDA libraries come from pip packages (nvidia-cublas-cu12, nvidia-cudnn-cu12): let Windows find their DLLs
-for pkg in ('cublas', 'cudnn'):
+# the CUDA libraries come from pip packages (nvidia-cublas-cu12, nvidia-cudnn-cu12): on Windows, let it find their DLLs
+for pkg in ('cublas', 'cudnn') if os.name == 'nt' else ():
     d = Path(sys.prefix) / 'Lib' / 'site-packages' / 'nvidia' / pkg / 'bin'
     if d.is_dir():
         os.add_dll_directory(str(d)); os.environ['PATH'] = str(d) + os.pathsep + os.environ['PATH']
