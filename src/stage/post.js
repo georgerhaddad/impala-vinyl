@@ -99,23 +99,37 @@ export class Post {
     if (w === this.w && h === this.h) return;
     this.w = w; this.h = h;
     this.frame?.dispose(); this.mips?.forEach((m) => m.dispose());
-    // the finished canvas is blitted (and its antialiasing resolved) into this; the canvas has no alpha, so neither does this
-    this.frameRT?.dispose(); this.frameRT = new THREE.WebGLRenderTarget(w, h, { format: THREE.RGBFormat, depthBuffer: false });
-    this.frame = this.frameRT.texture;
+    this.makeFrame();
     this.mips = []; let mw = w, mh = h;
     for (let i = 0; i < 5; i++) { mw = Math.max(1, mw >> 1); mh = Math.max(1, mh >> 1); this.mips.push(new THREE.WebGLRenderTarget(mw, mh, { type: THREE.HalfFloatType, depthBuffer: false })); }
     this.ups = this.mips.slice(0, 4).map((m) => new THREE.WebGLRenderTarget(m.width, m.height, { type: THREE.HalfFloatType, depthBuffer: false }));
     this.outs?.forEach((o) => o.dispose()); this.outs = [0, 1].map(() => new THREE.WebGLRenderTarget(w, h, { depthBuffer: false })); this.flip = 0;
     this.copy ||= new THREE.ShaderMaterial({ vertexShader: QUAD_VS, fragmentShader: 'precision highp float; uniform sampler2D t; varying vec2 vUv; void main() { gl_FragColor = texture2D(t, vUv); }', uniforms: { t: { value: null } }, depthTest: false, depthWrite: false });
   }
+  // The finished canvas is blitted (and its antialiasing resolved) into this. Resolving a multisampled buffer needs
+  // the same format at both ends, and a canvas without alpha is RGB8 in Chrome but RGBA8 in Firefox: so it starts as
+  // RGB, and if the first blit is refused it becomes RGBA from then on.
+  makeFrame() {
+    this.frameRT?.dispose();
+    this.frameRT = new THREE.WebGLRenderTarget(this.w, this.h, { format: this.rgba ? THREE.RGBAFormat : THREE.RGBFormat, depthBuffer: false });
+    this.frame = this.frameRT.texture; this.checked = false;
+  }
+  blitCanvas() {
+    const r = this.r, gl = r.getContext(), w = this.w, h = this.h;
+    r.setRenderTarget(this.frameRT);                                // makes three create its framebuffer
+    const fb = r.properties.get(this.frameRT).__webglFramebuffer;
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, fb);
+    if (this.checked) return gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+    while (gl.getError() !== gl.NO_ERROR);                          // only what the blit itself says
+    gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+    this.checked = true;
+    if (gl.getError() === gl.INVALID_OPERATION && !this.rgba) { r.resetState(); this.rgba = true; this.makeFrame(); this.blitCanvas(); }
+  }
   pass(mat, target) { this.quad.material = mat; this.r.setRenderTarget(target); this.r.render(this.scene, this.cam); }
   // the canvas already holds the finished scene; read it, then draw it back with everything on top
   run(fx) {
     const r = this.r, w = this.w, h = this.h;
-    r.setRenderTarget(this.frameRT);                                // makes three create its framebuffer
-    const gl = r.getContext(), fb = r.properties.get(this.frameRT).__webglFramebuffer;
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, fb);
-    gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+    this.blitCanvas();
     r.resetState();
     let src = this.frame, sw = w, sh = h;
     this.mips.forEach((m, i) => {
